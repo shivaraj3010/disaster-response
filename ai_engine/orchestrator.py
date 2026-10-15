@@ -4,6 +4,7 @@
 from typing import Any
 
 from .ai_agents import assess_severity
+from .resource_allocator import allocate_resources, rank_incidents
 from .rules import classify_incident
 from .schemas import IncidentAssessment, IncidentReport
 
@@ -11,36 +12,27 @@ from .schemas import IncidentAssessment, IncidentReport
 def orchestrate_incident(incident_data: dict[str, Any]) -> dict[str, Any]:
     """Classify an incident, assess its risk, and return one assessment."""
 
-    # Step 1: Validate and normalize the incoming report.
     incident = IncidentReport.from_dict(incident_data)
     normalized = incident.to_dict()
 
-    # Step 2: Classify the incident using local keyword rules.
     classification = classify_incident(normalized)
     category = classification["category"]
 
-    # Step 3: Assess severity and priority using local rules.
     severity_result = assess_severity(normalized, category)
 
-    # Step 4: Generate conservative action recommendations.
     recommended_actions = _recommend_actions(
         category,
         severity_result["severity"],
     )
 
-    # Step 5: Suggest potentially useful resources.
-    # These are suggestions, not confirmation of availability.
     resource_needs = _suggest_resources(category)
 
-    # Step 6: Combine evidence and remove duplicates while
-    # preserving its original order.
     combined_evidence = list(
         dict.fromkeys(
             classification["evidence"] + severity_result["evidence"]
         )
     )
 
-    # Step 7: Build the structured assessment.
     assessment = IncidentAssessment(
         incident_id=incident.incident_id,
         category=category,
@@ -57,6 +49,45 @@ def orchestrate_incident(incident_data: dict[str, Any]) -> dict[str, Any]:
     )
 
     return assessment.to_dict()
+
+
+def orchestrate_incidents(
+    incident_reports: list[dict[str, Any]],
+    inventory: dict[str, int],
+) -> dict[str, Any]:
+    """Assess multiple reports and recommend limited-resource allocation."""
+
+    if not isinstance(incident_reports, list):
+        raise ValueError("incident_reports must be a list.")
+
+    if not isinstance(inventory, dict):
+        raise ValueError("inventory must be a dictionary.")
+
+    assessments = [
+        orchestrate_incident(report)
+        for report in incident_reports
+    ]
+
+    # Rank the completed assessments by severity.
+    ranked_assessments = rank_incidents(assessments)
+
+    # Use each assessment's recommended resource needs.
+    allocation_input = [
+        {
+            "incident_id": assessment["incident_id"],
+            "severity": assessment["severity"],
+            "resource_needs": assessment["resource_needs"],
+        }
+        for assessment in ranked_assessments
+    ]
+
+    allocation = allocate_resources(allocation_input, inventory)
+
+    return {
+        "assessments": ranked_assessments,
+        "resource_allocation": allocation,
+        "needs_human_review": True,
+    }
 
 
 def _recommend_actions(category: str, severity: str) -> list[str]:
@@ -107,7 +138,7 @@ def _recommend_actions(category: str, severity: str) -> list[str]:
 
 
 def _suggest_resources(category: str) -> list[str]:
-    """Suggest potentially relevant resources without claiming availability."""
+    """Suggest potentially relevant resource types."""
 
     resources = {
         "flood": [
