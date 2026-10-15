@@ -57,3 +57,22 @@ class IncidentResponse(BaseModel):
     status: IncidentStatus
     created_at: datetime
     updated_at: datetime
+
+
+class IncidentAssessmentRequest(BaseModel):
+    """Input for a local AI incident assessment."""
+
+    description: str = Field(min_length=1, max_length=5000)
+    location: str = Field(default="", max_length=300)
+    category: str | None = Field(default=None, max_length=100)
+    severity: Severity | None = None
+    incident_id: str = ""
+    title: str = ""
+
+    @field_validator("description")
+    @classmethod
+    def reject_blank_description(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Description cannot be blank")
+        return value
