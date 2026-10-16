@@ -1,126 +1,138 @@
-import { useMemo, useState } from 'react'
+
+import { useMemo, useContext } from 'react'
 import {
-  Sparkles, AlertTriangle, ShieldCheck, Clock3, Users,
-  Package, CheckCircle2, X, Filter, Info, ArrowUpRight,
+  Sparkles,
+  AlertTriangle,
+  ShieldCheck,
+  Users,
+  Package,
+  CheckCircle2,
+  X,
+  ArrowUpRight,
 } from 'lucide-react'
-
+import { DisasterStateContext } from '../DisasterStateContext'
 import './AIRecommendations.css'
-import { useDisasterState } from '../DisasterStateContext'
 
-function AIRecommendations({ incidents = [] }) {
-  const {
-    reviewedRecommendations: reviewed,
-    setReviewedRecommendations: setReviewed,
-    dismissedRecommendations: dismissed,
-    setDismissedRecommendations: setDismissed,
-  } = useDisasterState()
-
-  const [filter, setFilter] = useState('All')
+function AIRecommendations({ incidents = [], setIncidents }) {
+  const { tasks = [], setTasks } = useContext(DisasterStateContext)
 
   const recommendations = useMemo(() => {
-    const severityRank = {
-      Critical: 4,
-      High: 3,
-      Medium: 2,
-      Low: 1,
-    }
+    const severityRank = { Critical: 4, High: 3, Medium: 2, Low: 1 }
 
     return [...incidents]
+      .filter(
+        (incident) =>
+          !['closed', 'verified', 'resolved'].includes(
+            String(incident.status || '').trim().toLowerCase()
+          )
+      )
       .sort(
         (a, b) =>
           (severityRank[b.severity] || 0) -
-          (severityRank[a.severity] || 0),
+          (severityRank[a.severity] || 0)
       )
       .map((incident) => {
         const title = (incident.title || '').toLowerCase()
 
-        let action = 'Verify the situation and identify the resources required.'
+        let action = 'Verify the situation and identify required resources.'
         let resource = 'Assessment team'
-        let reason = 'The incident needs human assessment before resources are allocated.'
+        let reason =
+          'Human assessment is needed before resources are allocated.'
 
         if (
           title.includes('flood') ||
           title.includes('river') ||
           title.includes('water')
         ) {
-          action = 'Assess water levels and check whether residents need evacuation or assistance.'
+          action =
+            'Assess water levels and identify residents needing evacuation or assistance.'
           resource = 'Flood rescue team'
-          reason = 'Water-related incidents may require rapid field assessment.'
+          reason =
+            'Water-related incidents may require rapid field assessment.'
         } else if (
           title.includes('medical') ||
           title.includes('injury') ||
           title.includes('health')
         ) {
-          action = 'Verify medical needs and check the availability of first-aid supplies.'
+          action =
+            'Verify medical needs and check first-aid supply availability.'
           resource = 'Medical response team'
-          reason = 'Medical needs should be assessed by qualified personnel.'
+          reason =
+            'Medical needs should be assessed by qualified personnel.'
         } else if (
           title.includes('road') ||
           title.includes('tree') ||
           title.includes('blocked')
         ) {
-          action = 'Check access routes and assess whether a safe clearance team is required.'
+          action =
+            'Check access routes and assess whether safe road clearance is required.'
           resource = 'Road clearance team'
-          reason = 'Blocked routes may affect access for emergency responders.'
+          reason =
+            'Blocked routes can prevent emergency responders from reaching people.'
         } else if (
           title.includes('power') ||
           title.includes('electric')
         ) {
-          action = 'Check affected facilities and identify any safety or backup-power needs.'
+          action =
+            'Check affected facilities and identify backup-power needs.'
           resource = 'Utility assessment team'
-          reason = 'Power disruptions may affect shelters and essential services.'
+          reason =
+            'Power disruptions can affect shelters and essential services.'
         } else if (
           title.includes('shelter') ||
           title.includes('supply')
         ) {
-          action = 'Verify shelter capacity and check essential supply levels.'
+          action =
+            'Verify shelter capacity and essential supply levels.'
           resource = 'Supply coordination team'
-          reason = 'Shelters may need additional supplies or operational support.'
+          reason =
+            'Shelters may need additional supplies or operational support.'
         }
 
         return {
-          id: incident.id,
-          incidentId: incident.id,
-          title: incident.title,
-          location: incident.location || 'Location not provided',
-          severity: incident.severity || 'Low',
-          status: incident.status,
-          people: incident.people ?? 0,
+          ...incident,
           action,
           resource,
           reason,
+          location: incident.location || 'Location not provided',
         }
       })
   }, [incidents])
 
-  const visibleRecommendations = recommendations.filter((item) => {
-    if (dismissed.includes(item.id)) return false
-    if (filter === 'All') return true
-    if (filter === 'Needs review') return !reviewed.includes(item.id)
-    if (filter === 'Reviewed') return reviewed.includes(item.id)
-    return item.severity === filter
-  })
+  const incidentsAwaitingReview = incidents.filter(
+    (incident) => incident.status === 'Waiting for Review'
+  )
 
-  const reviewedCount = recommendations.filter(
-    (item) => reviewed.includes(item.id),
-  ).length
-
-  function markReviewed(id) {
-    setReviewed((previous) =>
-      previous.includes(id) ? previous : [...previous, id],
+  function approveIncident(incidentId) {
+    setIncidents((current) =>
+      current.map((incident) =>
+        incident.id === incidentId
+          ? { ...incident, status: 'Resolved' }
+          : incident
+      )
     )
   }
 
-  function dismissRecommendation(id) {
-    setDismissed((previous) =>
-      previous.includes(id) ? previous : [...previous, id],
+  function rejectIncident(incidentId) {
+    // Return the incident to Pending.
+    setIncidents((current) =>
+      current.map((incident) =>
+        incident.id === incidentId
+          ? { ...incident, status: 'Pending' }
+          : incident
+      )
     )
-  }
 
-  function restoreRecommendations() {
-    setDismissed([])
-    setReviewed([])
-    setFilter('All')
+    // Return only the rescue tasks linked to this incident to Pending.
+    if (typeof setTasks === 'function') {
+      setTasks((current) =>
+        current.map((task) =>
+          task.incidentId === incidentId
+            ? { ...task, status: 'Pending' }
+            : task
+        )
+      )
+    }
   }
 
   return (
@@ -137,7 +149,6 @@ function AIRecommendations({ incidents = [] }) {
             Operators remain responsible for every decision.
           </p>
         </div>
-
         <div className="ai-demo-status">
           <span className="ai-status-dot" />
           Demo analysis
@@ -151,9 +162,8 @@ function AIRecommendations({ incidents = [] }) {
         <div>
           <strong>Human verification required</strong>
           <p>
-            These are rule-based examples generated from local incident data,
-            not predictions from a connected AI model. Verify all suggestions
-            with authorized emergency personnel.
+            These are rule-based demo suggestions, not predictions from a
+            connected AI model. Verify suggestions with authorized personnel.
           </p>
         </div>
       </section>
@@ -165,7 +175,7 @@ function AIRecommendations({ incidents = [] }) {
           </div>
           <span>Total suggestions</span>
           <strong>{recommendations.length}</strong>
-          <small>Based on current demo incidents</small>
+          <small>Based on active demo incidents</small>
         </article>
 
         <article className="ai-summary-card">
@@ -175,7 +185,7 @@ function AIRecommendations({ incidents = [] }) {
           <span>Critical incidents</span>
           <strong>
             {recommendations.filter(
-              (item) => item.severity === 'Critical',
+              (item) => item.severity === 'Critical'
             ).length}
           </strong>
           <small>Require operator attention</small>
@@ -183,195 +193,164 @@ function AIRecommendations({ incidents = [] }) {
 
         <article className="ai-summary-card">
           <div className="ai-summary-icon ai-icon-purple">
-            <Clock3 size={19} />
+            <Users size={19} />
           </div>
-          <span>Awaiting review</span>
-          <strong>
-            {recommendations.filter(
-              (item) =>
-                !reviewed.includes(item.id) &&
-                !dismissed.includes(item.id),
-            ).length}
-          </strong>
-          <small>Not yet marked reviewed</small>
+          <span>Awaiting resolution review</span>
+          <strong>{incidentsAwaitingReview.length}</strong>
+          <small>Completed tasks awaiting approval</small>
         </article>
 
         <article className="ai-summary-card">
           <div className="ai-summary-icon ai-icon-green">
             <CheckCircle2 size={19} />
           </div>
-          <span>Reviewed</span>
-          <strong>{reviewedCount}</strong>
-          <small>Reviewed in this session</small>
+          <span>Active incidents</span>
+          <strong>{recommendations.length}</strong>
+          <small>Requiring response or monitoring</small>
         </article>
       </section>
 
       <section className="ai-recommendations-panel">
         <div className="ai-list-header">
           <div>
-            <h2>Suggested response actions</h2>
-            <p>Prioritized by incident severity, not live risk prediction.</p>
+            <h2>Incident Resolution Review</h2>
+            <p>Verify completed rescue tasks before resolving incidents.</p>
           </div>
-
-          <label className="ai-filter">
-            <Filter size={16} />
-            <select
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              aria-label="Filter recommendations"
-            >
-              <option value="All">All suggestions</option>
-              <option value="Needs review">Needs review</option>
-              <option value="Reviewed">Reviewed</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </label>
+          <strong>
+            {incidentsAwaitingReview.length} awaiting review
+          </strong>
         </div>
 
-        {visibleRecommendations.length === 0 ? (
+        {incidentsAwaitingReview.length === 0 ? (
           <div className="ai-empty-state">
             <CheckCircle2 size={30} />
-            <h3>No recommendations to display</h3>
-            <p>
-              There are no items matching this filter. You can restore
-              dismissed suggestions or review the incident list.
-            </p>
-            <button
-              className="ai-secondary-button"
-              onClick={restoreRecommendations}
-            >
-              Reset review state
-            </button>
+            <h3>No incidents are waiting for review</h3>
+            <p>Complete a rescue task to send its incident for review.</p>
           </div>
         ) : (
           <div className="ai-recommendation-list">
-            {visibleRecommendations.map((item, index) => {
-              const isReviewed = reviewed.includes(item.id)
+            {incidentsAwaitingReview.map((incident) => (
+              <article
+                className="ai-recommendation-card"
+                key={incident.id}
+              >
+                <h3>{incident.title}</h3>
+                <p>
+                  {incident.id} · {incident.location}
+                </p>
+                <p>Severity: {incident.severity}</p>
 
-              return (
-                <article
-                  className={`ai-recommendation-card ${
-                    isReviewed ? 'ai-card-reviewed' : ''
-                  }`}
-                  key={item.id}
-                >
-                  <div className="ai-card-topline">
-                    <span className="ai-card-number">
-                      #{String(index + 1).padStart(2, '0')}
-                    </span>
+                <div className="ai-card-actions">
+                  <button
+                    className="ai-review-button"
+                    onClick={() => approveIncident(incident.id)}
+                  >
+                    <CheckCircle2 size={15} />
+                    Approve Resolution
+                  </button>
 
-                    <span
-                      className={`ai-severity ai-severity-${(
-                        item.severity || 'Low'
-                      ).toLowerCase()}`}
-                    >
-                      {item.severity || 'Unclassified'}
-                    </span>
-
-                    <span className="ai-incident-id">{item.incidentId}</span>
-
-                    {isReviewed && (
-                      <span className="ai-reviewed-tag">
-                        <CheckCircle2 size={13} />
-                        Reviewed
-                      </span>
-                    )}
-                  </div>
-
-                  <h3>{item.title}</h3>
-
-                  <div className="ai-incident-meta">
-                    <span>
-                      <ArrowUpRight size={14} />
-                      {item.location}
-                    </span>
-                    <span>
-                      <Users size={14} />
-                      {item.people} potentially affected (sample)
-                    </span>
-                  </div>
-
-                  <div className="ai-action-box">
-                    <div className="ai-action-icon">
-                      <Sparkles size={17} />
-                    </div>
-                    <div>
-                      <span className="ai-field-label">
-                        SUGGESTED ACTION
-                      </span>
-                      <p>{item.action}</p>
-                    </div>
-                  </div>
-
-                  <div className="ai-card-details">
-                    <div>
-                      <span className="ai-field-label">
-                        SUGGESTED RESOURCE
-                      </span>
-                      <strong>
-                        <Package size={15} />
-                        {item.resource}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span className="ai-field-label">
-                        WHY THIS IS SUGGESTED
-                      </span>
-                      <p>{item.reason}</p>
-                    </div>
-                  </div>
-
-                  <div className="ai-card-footer">
-                    <span className="ai-demo-label">
-                      <Info size={14} />
-                      Demo suggestion · Not dispatched
-                    </span>
-
-                    <div className="ai-card-actions">
-                      <button
-                        className="ai-dismiss-button"
-                        onClick={() => dismissRecommendation(item.id)}
-                        aria-label={`Dismiss recommendation for ${item.incidentId}`}
-                      >
-                        <X size={15} />
-                        Dismiss
-                      </button>
-
-                      <button
-                        className="ai-review-button"
-                        onClick={() => markReviewed(item.id)}
-                        disabled={isReviewed}
-                      >
-                        <CheckCircle2 size={15} />
-                        {isReviewed ? 'Reviewed' : 'Mark reviewed'}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
+                  <button
+                    className="ai-dismiss-button"
+                    onClick={() => rejectIncident(incident.id)}
+                  >
+                    <X size={15} />
+                    Reject — Needs More Work
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         )}
+      </section>
 
-        <div className="ai-panel-footer">
-          <span>
-            Showing {visibleRecommendations.length} of {recommendations.length}{' '}
-            recommendations
-          </span>
-          <button onClick={restoreRecommendations}>
-            Reset demo review state
-          </button>
+      <section className="ai-recommendations-panel">
+        <div className="ai-list-header">
+          <div>
+            <h2>Suggested response actions</h2>
+            <p>
+              Prioritized by incident severity, not live risk prediction.
+            </p>
+          </div>
         </div>
+
+        {recommendations.length === 0 ? (
+          <div className="ai-empty-state">
+            <CheckCircle2 size={30} />
+            <h3>No active incidents</h3>
+            <p>New active incidents will appear here.</p>
+          </div>
+        ) : (
+          <div className="ai-recommendation-list">
+            {recommendations.map((item, index) => (
+              <article
+                className="ai-recommendation-card"
+                key={item.id}
+              >
+                <div className="ai-card-topline">
+                  <span className="ai-card-number">
+                    #{String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span
+                    className={`ai-severity ai-severity-${(
+                      item.severity || 'Low'
+                    ).toLowerCase()}`}
+                  >
+                    {item.severity || 'Unclassified'}
+                  </span>
+                  <span className="ai-incident-id">{item.id}</span>
+                </div>
+
+                <h3>{item.title}</h3>
+
+                <div className="ai-incident-meta">
+                  <span>
+                    <ArrowUpRight size={14} />
+                    {item.location}
+                  </span>
+                  <span>
+                    <Users size={14} />
+                    {item.people ?? 0} potentially affected (sample)
+                  </span>
+                </div>
+
+                <div className="ai-action-box">
+                  <div className="ai-action-icon">
+                    <Sparkles size={17} />
+                  </div>
+                  <div>
+                    <span className="ai-field-label">
+                      SUGGESTED ACTION
+                    </span>
+                    <p>{item.action}</p>
+                  </div>
+                </div>
+
+                <div className="ai-card-details">
+                  <div>
+                    <span className="ai-field-label">
+                      SUGGESTED RESOURCE
+                    </span>
+                    <strong>
+                      <Package size={15} />
+                      {item.resource}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="ai-field-label">
+                      WHY THIS IS SUGGESTED
+                    </span>
+                    <p>{item.reason}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="ai-bottom-note">
         <ShieldCheck size={17} />
-        No responders are assigned and no real-world actions are triggered
-        by this page.
+        Demo recommendations only. No real-world actions are triggered.
       </div>
     </div>
   )

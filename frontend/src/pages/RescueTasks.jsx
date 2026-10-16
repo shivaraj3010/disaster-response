@@ -85,9 +85,9 @@ function RescueTasks({ incidents = [] }) {
           return incident
         }
 
-        if (newStatus === 'Completed') {
-          return { ...incident, status: 'Resolved' }
-        }
+       if (newStatus === 'Completed') {
+  return { ...incident, status: 'Waiting for Review' }
+}
 
         if (
           task.status === 'Completed' &&

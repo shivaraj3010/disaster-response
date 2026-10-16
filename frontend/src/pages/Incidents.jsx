@@ -1,38 +1,76 @@
 
 import { useState } from 'react'
-import { Search, MapPin, AlertTriangle, ChevronRight, X } from 'lucide-react'
+import {
+  Search,
+  MapPin,
+  AlertTriangle,
+  ChevronRight,
+  X,
+  UserRound,
+  UserCheck,
+} from 'lucide-react'
+import { useDisasterState } from '../DisasterStateContext'
 import './Incidents.css'
 
+const workers = [
+  'Arun Kumar',
+  'Rahul Das',
+  'Priya Sharma',
+  'Meena Raj',
+]
+
 function Incidents({ incidents = [] }) {
+  const { setIncidents } = useDisasterState()
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('All')
   const [status, setStatus] = useState('All')
-  const [selected, setSelected] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
+  const [feedback, setFeedback] = useState('')
+
+  const selected = incidents.find((item) => item.id === selectedId)
 
   const filtered = incidents.filter((incident) => {
     const query = search.toLowerCase()
-
     const matchesSearch =
-      `${incident.id} ${incident.title} ${incident.location}`
+      `${incident.id} ${incident.title} ${incident.location} ${incident.assignedResponder || ''}`
         .toLowerCase()
         .includes(query)
 
-    const matchesSeverity =
-      severity === 'All' || incident.severity === severity
-
-    const matchesStatus =
-      status === 'All' || incident.status === status
-
-    return matchesSearch && matchesSeverity && matchesStatus
+    return (
+      matchesSearch &&
+      (severity === 'All' || incident.severity === severity) &&
+      (status === 'All' || incident.status === status)
+    )
   })
 
   const criticalCount = incidents.filter(
-    (item) => item.severity === 'Critical',
+    (item) => item.severity === 'Critical'
   ).length
 
   const respondingCount = incidents.filter(
-    (item) => item.status === 'Responding',
+    (item) => ['Responding', 'In progress', 'In Progress'].includes(item.status)
   ).length
+
+  function assignWorker(worker) {
+    if (!selected) return
+
+    setIncidents((current) =>
+      current.map((incident) =>
+        incident.id === selected.id
+          ? {
+              ...incident,
+              assignedResponder: worker,
+              status:
+                incident.status === 'Reported'
+                  ? 'Assigned'
+                  : incident.status,
+            }
+          : incident
+      )
+    )
+
+    setFeedback(`${worker} assigned to ${selected.id}.`)
+  }
 
   return (
     <section className="incidents-page">
@@ -44,24 +82,27 @@ function Incidents({ incidents = [] }) {
           </div>
           <h1>Incidents</h1>
           <p className="page-subtitle">
-            Search, filter, and review reported situations.
+            Review incidents and assign response workers.
           </p>
         </div>
-
         <span className="date-chip">Demo data · Not live reports</span>
       </div>
+
+      {feedback && (
+        <p role="status" className="incident-assignment-feedback">
+          <UserCheck size={16} /> {feedback}
+        </p>
+      )}
 
       <div className="incident-stats">
         <article className="panel incident-stat">
           <span>Total incidents</span>
           <strong>{incidents.length}</strong>
         </article>
-
         <article className="panel incident-stat">
           <span>Critical</span>
           <strong>{criticalCount}</strong>
         </article>
-
         <article className="panel incident-stat">
           <span>Responding</span>
           <strong>{respondingCount}</strong>
@@ -72,7 +113,7 @@ function Incidents({ incidents = [] }) {
         <div className="incidents-toolbar">
           <div>
             <h2>All reported incidents</h2>
-            <p>{filtered.length} matching demo records</p>
+            <p>{filtered.length} matching records</p>
           </div>
 
           <label className="search-box incidents-search">
@@ -80,7 +121,7 @@ function Incidents({ incidents = [] }) {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search ID, incident, or location..."
+              placeholder="Search ID, incident, location, worker..."
               aria-label="Search incidents"
             />
           </label>
@@ -89,10 +130,7 @@ function Incidents({ incidents = [] }) {
         <div className="incidents-filters">
           <label>
             Severity
-            <select
-              value={severity}
-              onChange={(event) => setSeverity(event.target.value)}
-            >
+            <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               <option>All</option>
               <option>Critical</option>
               <option>High</option>
@@ -103,16 +141,16 @@ function Incidents({ incidents = [] }) {
 
           <label>
             Status
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option>All</option>
               <option>Reported</option>
               <option>Assigned</option>
               <option>Responding</option>
               <option>In progress</option>
+              <option>In Progress</option>
               <option>Monitoring</option>
+              <option>Waiting for Review</option>
+              <option>Resolved</option>
             </select>
           </label>
 
@@ -136,19 +174,17 @@ function Incidents({ incidents = [] }) {
                 <th>Location</th>
                 <th>Severity</th>
                 <th>Status</th>
+                <th>Assigned worker</th>
                 <th>Reported</th>
                 <th>Details</th>
               </tr>
             </thead>
-
             <tbody>
               {filtered.map((incident) => (
                 <tr key={incident.id}>
                   <td>
                     <div className="table-incident">
-                      <span
-                        className={`incident-icon severity-${incident.severity.toLowerCase()}`}
-                      >
+                      <span className={`incident-icon severity-${(incident.severity || 'low').toLowerCase()}`}>
                         <AlertTriangle size={17} />
                       </span>
                       <div>
@@ -157,30 +193,27 @@ function Incidents({ incidents = [] }) {
                       </div>
                     </div>
                   </td>
-
                   <td>
                     <span className="table-location">
-                      <MapPin size={14} />
-                      {incident.location}
+                      <MapPin size={14} /> {incident.location}
                     </span>
                   </td>
-
                   <td>
-                    <span
-                      className={`severity-badge badge-${incident.severity.toLowerCase()}`}
-                    >
+                    <span className={`severity-badge badge-${(incident.severity || 'low').toLowerCase()}`}>
                       {incident.severity}
                     </span>
                   </td>
-
                   <td>{incident.status}</td>
+                  <td>{incident.assignedResponder || 'Unassigned'}</td>
                   <td>{incident.time || 'Just now'}</td>
-
                   <td>
                     <button
                       className="icon-button"
                       aria-label={`View ${incident.id}`}
-                      onClick={() => setSelected(incident)}
+                      onClick={() => {
+                        setSelectedId(incident.id)
+                        setFeedback('')
+                      }}
                     >
                       <ChevronRight size={18} />
                     </button>
@@ -198,34 +231,28 @@ function Incidents({ incidents = [] }) {
         </div>
 
         <div className="panel-footer">
-          <span>
-            Showing {filtered.length} of {incidents.length} sample records
-          </span>
+          <span>Showing {filtered.length} of {incidents.length} records</span>
           <span className="footer-demo">Local demonstration only</span>
         </div>
       </div>
 
       {selected && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setSelected(null)}
-        >
+        <div className="modal-backdrop" onClick={() => setSelectedId(null)}>
           <section
             className="incident-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="incident-detail-title"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-heading">
               <div>
-                <span className="panel-kicker">INCIDENT DETAILS · DEMO</span>
+                <span className="panel-kicker">INCIDENT DETAILS</span>
                 <h2 id="incident-detail-title">{selected.title}</h2>
               </div>
-
               <button
                 className="icon-button"
-                onClick={() => setSelected(null)}
+                onClick={() => setSelectedId(null)}
                 aria-label="Close details"
               >
                 <X size={18} />
@@ -236,31 +263,42 @@ function Incidents({ incidents = [] }) {
               <span>Incident ID</span>
               <strong>{selected.id}</strong>
             </div>
-
             <div className="modal-detail-row">
               <span>Location</span>
               <strong>{selected.location}</strong>
             </div>
-
             <div className="modal-detail-row">
               <span>Severity</span>
-              <span
-                className={`severity-badge badge-${selected.severity.toLowerCase()}`}
-              >
-                {selected.severity}
-              </span>
+              <strong>{selected.severity}</strong>
             </div>
-
             <div className="modal-detail-row">
               <span>Status</span>
               <strong>{selected.status}</strong>
             </div>
+            <div className="modal-detail-row">
+              <span>Assigned worker</span>
+              <strong>{selected.assignedResponder || 'Unassigned'}</strong>
+            </div>
+
+            <div className="incident-worker-assignment">
+              <label htmlFor="incident-worker">
+                <UserRound size={16} /> Assign worker
+              </label>
+              <select
+                id="incident-worker"
+                value={selected.assignedResponder || ''}
+                onChange={(e) => assignWorker(e.target.value)}
+              >
+                <option value="" disabled>Select a worker</option>
+                {workers.map((worker) => (
+                  <option key={worker} value={worker}>{worker}</option>
+                ))}
+              </select>
+              <p>Demo assignment only; no real-world dispatch occurs.</p>
+            </div>
 
             <div className="modal-actions">
-              <button
-                className="secondary-button"
-                onClick={() => setSelected(null)}
-              >
+              <button className="secondary-button" onClick={() => setSelectedId(null)}>
                 Close
               </button>
             </div>

@@ -11,6 +11,7 @@ import Incidents from './Incidents'
 import RescueTasks from './RescueTasks'
 import Inventory from './Inventory'
 import AIRecommendations from './AIRecommendations'
+import SyncStatus from './SyncStatus'
 
 const initialActivities = [
   { text: 'Rescue team assigned to INC-0241', time: '2 min ago', type: 'team' },
@@ -34,14 +35,13 @@ const navItems = [
   { label: 'Sync Status', icon: RefreshCw },
 ]
 
-// Closed and verified incidents are hidden from the Dashboard only.
+
+ // Closed, verified, and resolved incidents are hidden from the active Dashboard.
 const isIncidentClosed = (incident) =>
-  ['Closed', 'Verified'].includes(
-    String(incident.status || '').trim().toLowerCase().replace(
-      /^(.)/,
-      (character) => character.toUpperCase(),
-    ),
+  ['closed', 'verified', 'resolved'].includes(
+    String(incident.status || '').trim().toLowerCase(),
   )
+
 
 function Dashboard({ activePage, onNavigate, incidents = [], setIncidents }) {
   const [search, setSearch] = useState('')
@@ -304,8 +304,12 @@ function Dashboard({ activePage, onNavigate, incidents = [], setIncidents }) {
           ) : activePage === 'Inventory' ? (
             <Inventory />
           ) : activePage === 'AI Recommendations' ? (
-            <AIRecommendations incidents={incidents} />
-          ) : (
+            <AIRecommendations
+                   incidents={incidents}
+                   setIncidents={setIncidents}
+                    />
+          ) : activePage === 'Sync Status' ? <SyncStatus /> 
+          : (
             <>
               <section className="welcome-row">
                 <div>
