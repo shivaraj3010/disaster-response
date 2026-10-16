@@ -2,13 +2,19 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
-
-from fastapi import FastAPI, Depends, HTTPException, Response
-from fastapi import status
 import sqlite3
 
+from fastapi import FastAPI, Depends, HTTPException, Response, status
+
 from database import database_session, init_db
-from schemas import IncidentCreate, IncidentUpdate, IncidentResponse
+from schemas import (
+    IncidentCreate,
+    IncidentUpdate,
+    IncidentResponse,
+    IncidentAssessmentRequest,
+)
+
+from ai_engine.orchestrator import orchestrate_incident
 
 
 def utc_now():
@@ -35,8 +41,13 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "disaster-response-api"}
+    return {
+        "status": "ok",
+        "service": "disaster-response-api",
+    }
 
+
+# ---------------- CREATE INCIDENT ----------------
 
 @app.post(
     "/api/incidents",
@@ -70,19 +81,30 @@ def create_incident(
     )
 
     row = db.execute(
-        "SELECT * FROM incidents WHERE id = ?", (incident_id,)
+        "SELECT * FROM incidents WHERE id = ?",
+        (incident_id,),
     ).fetchone()
 
     return dict(row)
 
 
-@app.get("/api/incidents", response_model=list[IncidentResponse])
-def list_incidents(db: sqlite3.Connection = Depends(get_db)):
+# ---------------- LIST INCIDENTS ----------------
+
+@app.get(
+    "/api/incidents",
+    response_model=list[IncidentResponse],
+)
+def list_incidents(
+    db: sqlite3.Connection = Depends(get_db),
+):
     rows = db.execute(
         "SELECT * FROM incidents ORDER BY created_at DESC"
     ).fetchall()
+
     return [dict(row) for row in rows]
 
+
+# ---------------- GET ONE INCIDENT ----------------
 
 @app.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
 def get_incident(
@@ -90,16 +112,25 @@ def get_incident(
     db: sqlite3.Connection = Depends(get_db),
 ):
     row = db.execute(
-        "SELECT * FROM incidents WHERE id = ?", (incident_id,)
+        "SELECT * FROM incidents WHERE id = ?",
+        (incident_id,),
     ).fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found",
+        )
 
     return dict(row)
 
 
-@app.patch("/api/incidents/{incident_id}", response_model=IncidentResponse)
+# ---------------- UPDATE INCIDENT ----------------
+
+@app.patch(
+    "/api/incidents/{incident_id}",
+    response_model=IncidentResponse,
+)
 def update_incident(
     incident_id: str,
     updates: IncidentUpdate,
@@ -120,15 +151,22 @@ def update_incident(
         )
 
     existing = db.execute(
-        "SELECT * FROM incidents WHERE id = ?", (incident_id,)
+        "SELECT * FROM incidents WHERE id = ?",
+        (incident_id,),
     ).fetchone()
 
     if existing is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found",
+        )
 
     changes["updated_at"] = utc_now()
+
     columns = list(changes.keys())
-    assignments = ", ".join(f"{column} = ?" for column in columns)
+    assignments = ", ".join(
+        f"{column} = ?" for column in columns
+    )
     values = [changes[column] for column in columns]
 
     db.execute(
@@ -137,11 +175,14 @@ def update_incident(
     )
 
     row = db.execute(
-        "SELECT * FROM incidents WHERE id = ?", (incident_id,)
+        "SELECT * FROM incidents WHERE id = ?",
+        (incident_id,),
     ).fetchone()
 
     return dict(row)
 
+
+# ---------------- DELETE INCIDENT ----------------
 
 @app.delete("/api/incidents/{incident_id}", status_code=204)
 def delete_incident(
@@ -149,10 +190,45 @@ def delete_incident(
     db: sqlite3.Connection = Depends(get_db),
 ):
     cursor = db.execute(
-        "DELETE FROM incidents WHERE id = ?", (incident_id,)
+        "DELETE FROM incidents WHERE id = ?",
+        (incident_id,),
     )
 
     if cursor.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found",
+        )
 
     return Response(status_code=204)
+
+
+# ---------------- OFFLINE AI ASSESSMENT ----------------
+
+@app.post("/api/ai/assess")
+def assess_incident_with_ai(
+    request: IncidentAssessmentRequest,
+):
+    """Run a local AI-engine assessment without saving a database record."""
+
+    incident_data = {
+        "incident_id": request.incident_id,
+        "title": request.title,
+        "description": request.description,
+        "incident_type": request.category,
+        "severity": request.severity,
+    }
+
+    try:
+        assessment = orchestrate_incident(incident_data)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "assessment": assessment,
+        "location": request.location,
+        "needs_human_review": True,
+    }
